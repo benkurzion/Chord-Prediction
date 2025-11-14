@@ -3,6 +3,8 @@ import ast
 import re
 import numpy as np
 import csv
+import torch
+from torch.utils.data import Dataset, DataLoader
 
 def clean_dataset(save=False) : 
     '''
@@ -20,9 +22,9 @@ def clean_dataset(save=False) :
 
 
 
-def get_data(type: str) -> np.ndarray:
+def get_data_as_list(type: str) -> list:
     '''
-    Returns the cleaned dataset. Chords are converted 
+    Returns the cleaned dataset as a list of lists. Chords are converted 
 
     Parameters
     ----------
@@ -57,4 +59,61 @@ def get_data(type: str) -> np.ndarray:
                     item = item.split('/', 1)[0]
                     clean_row.append(encoding[item])
             data.append(clean_row)
-    return np.array(data, dtype=object)
+    return data
+
+class SequencePredictionDataset(Dataset):
+    def __init__(self, padded_sequences, mask, max_len):
+        # 1. Pad the sequences
+        self.padded_sequences = padded_sequences
+        self.mask = mask
+        self.max_len = max_len 
+
+        self.X = self.padded_sequences[:, :-1, :] 
+        self.Y = self.padded_sequences[:, 1:, :] 
+        
+        self.mask = self.mask[:, :-1] 
+
+    def __len__(self):
+        return self.X.shape[0]
+
+    def __getitem__(self, idx):
+        return self.X[idx], self.Y[idx], self.mask[idx]
+
+
+def get_data_as_torch(type: str, batch_size=8) -> DataLoader:
+    '''
+    Returns the cleaned dataset as a pytorch dataloader object. Chords are converted 
+
+    Parameters
+    ----------
+
+    type : str
+        Determines how to encode the chords. 
+    batch_size : int
+        Determines how many samples are processed through the network before loss is backpropagated
+    '''
+    data = get_data_as_list(type=type)
+    TOKEN_VECTOR_SIZE = 12
+    PADDING_TOKEN = [0] * TOKEN_VECTOR_SIZE
+    max_len = max(len(seq) for seq in data)
+    
+    padded_sequences = []
+    # Mask to keep track of actual data vs. padding
+    masks = [] 
+    
+    for seq in data:
+        padding_needed = max_len - len(seq)
+        # Pad the sequence
+        padded_seq = seq + [PADDING_TOKEN] * padding_needed
+        padded_sequences.append(padded_seq)
+
+        # 1 for real tokens, 0 for padding tokens
+        mask = [1] * len(seq) + [0] * padding_needed
+        masks.append(mask)
+
+    X = torch.tensor(padded_sequences, dtype=torch.float32)
+    M = torch.tensor(masks, dtype=torch.bool)
+
+    dataloader = DataLoader(SequencePredictionDataset(X, M, max_len), batch_size=batch_size, shuffle=True)
+
+    return dataloader

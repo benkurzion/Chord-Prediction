@@ -4,7 +4,9 @@ import re
 import numpy as np
 import csv
 import torch
-from torch.utils.data import Dataset, DataLoader
+from torch.utils.data import Dataset, DataLoader, random_split
+import torch.nn as nn
+import torch.optim as optim
 
 def clean_dataset(save=False) : 
     '''
@@ -114,6 +116,20 @@ def get_data_as_torch(type: str, batch_size=8) -> DataLoader:
     X = torch.tensor(padded_sequences, dtype=torch.float32)
     M = torch.tensor(masks, dtype=torch.bool)
 
-    dataloader = DataLoader(SequencePredictionDataset(X, M, max_len), batch_size=batch_size, shuffle=True)
+    full_dataset = SequencePredictionDataset(X, M, max_len)
+    
+    # Calculate split sizes
+    total_size = len(full_dataset)
+    train_size = int(0.7 * total_size)
+    val_size = int(0.15 * total_size)
+    test_size = total_size - train_size - val_size
+    
 
-    return dataloader
+    train_dataset, val_dataset, test_dataset = random_split(full_dataset, [train_size, val_size, test_size],generator=torch.Generator().manual_seed(1))
+    
+    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
+    val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False)
+    test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False)
+    
+    print("Successfully formatted data.")
+    return train_loader, val_loader, test_loader

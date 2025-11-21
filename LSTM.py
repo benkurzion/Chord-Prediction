@@ -1,4 +1,4 @@
-from fetch_data import get_data_as_torch
+from Data.fetch_data import get_data_as_torch
 import torch
 from torch.utils.data import Dataset, DataLoader, random_split
 import torch.nn as nn

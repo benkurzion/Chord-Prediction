@@ -23,7 +23,6 @@ def clean_dataset(save=False) :
         df.to_csv('cleaned_data.csv', index=False, header=False)
 
 
-
 def get_data_as_list(type: str) -> list:
     '''
     Returns the cleaned dataset as a list of lists. Chords are converted 
@@ -34,11 +33,11 @@ def get_data_as_list(type: str) -> list:
     type : str
         Determines how to encode the chords. 
     '''
-    if type not in ['degrees', 'notes']:
-        raise ValueError("Invalid input type. Can only be either 'degrees' or 'notes'")
+    if type not in ['degrees', 'notes', 'strings']:
+        raise ValueError("Invalid input type. Can only be ['degrees', 'notes', 'strings']")
     
     data = []
-    chord_relations = pd.read_csv('chords_mapping.csv', low_memory=False)
+    chord_relations = pd.read_csv('Data/chords_mapping.csv', low_memory=False)
 
     encoding = {}
     if type == 'degrees':
@@ -49,9 +48,21 @@ def get_data_as_list(type: str) -> list:
         encoding = dict(zip(chord_relations['Chords'], chord_relations['Notes']))
         for key, value in encoding.items():
             encoding[key] = ast.literal_eval(value)
+    elif type == 'strings':
+        with open('Data/cleaned_data.csv', 'r') as file:
+            reader = csv.reader(file, delimiter=' ')
+            for row in reader:
+                # Filter out empty strings and <...> markers
+                clean_row = []
+                for item in row:
+                    if item and '<' not in item and '>' not in item:
+                        item = item.split('/', 1)[0]
+                        clean_row.append(item)
+                data.append(clean_row)
+        return data
 
     # Read and convert
-    with open('cleaned_data.csv', 'r') as file:
+    with open('Data/cleaned_data.csv', 'r') as file:
         reader = csv.reader(file, delimiter=' ')
         for row in reader:
             # Filter out empty strings and <...> markers

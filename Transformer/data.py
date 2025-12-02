@@ -136,7 +136,7 @@ class ChordDataModule(pl.LightningDataModule):
             self.train_dataset = cached['train_dataset']
             self.val_dataset = cached['val_dataset']
             self.test_dataset = cached['test_dataset']
-            print(f"✓ Cache loaded! Vocab size: {len(self.vocab)}, "
+            print(f" Cache loaded! Vocab size: {len(self.vocab)}, "
                   f"Train: {len(self.train_dataset)}, "
                   f"Val: {len(self.val_dataset)}, "
                   f"Test: {len(self.test_dataset)}")
@@ -150,6 +150,10 @@ class ChordDataModule(pl.LightningDataModule):
         # Get all chord sequences and genres for vocab building
         all_chords = dataset['train']['chords']
         all_genres = dataset['train']['main_genre']
+
+        print("FILTERING FOR POP")
+        dataset = dataset.filter(lambda x: x['main_genre'] == 'pop')
+        print("Completed Filtering for Pop")
         
         # Build vocabulary
         print("Building vocabulary...")

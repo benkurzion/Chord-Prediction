@@ -15,17 +15,19 @@ def train_model():
         min_freq=5,
         num_workers=4
     )
+    dm.clear_cache()
     
     # Setup data
     dm.setup()
+
     
     # Initialize model
     model = ChordTransformer(
         vocab_size=len(dm.vocab),
-        d_model=128,
-        nhead=4,
-        num_layers=2,
-        dim_feedforward=256,
+        d_model=64,
+        nhead=2,
+        num_layers=1,
+        dim_feedforward=128,
         dropout=0.1,
         learning_rate=1e-4
     )
@@ -42,7 +44,7 @@ def train_model():
                 monitor='val_loss',
                 mode='min',
                 save_top_k=3,
-                filename='chord-transformer-{epoch:02d}-{val_loss:.2f}'
+                filename='chord-transformer-pop-{epoch:02d}-{val_loss:.2f}'
             ),
             pl.callbacks.EarlyStopping(
                 monitor='val_loss',
@@ -51,7 +53,7 @@ def train_model():
             ),
             pl.callbacks.LearningRateMonitor(logging_interval='epoch')
         ],
-        logger=pl.loggers.TensorBoardLogger('logs/', name='chord_transformer')
+        logger=pl.loggers.TensorBoardLogger('logs/', name='chord_transformer_pop')
     )
     
     # Train

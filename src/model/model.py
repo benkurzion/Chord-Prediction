@@ -314,3 +314,54 @@ class ChordTransformer(pl.LightningModule):
                 tokens.append(next_token)
         
         return vocab.decode(tokens)
+
+    def generate_genre(self, vocab, start_tokens=None, genre: str = None, max_len=100, temperature=1.0):
+        """
+        Generate a chord progression conditioned on an optional genre.
+
+        Args:
+            vocab: ChordVocabulary instance
+            start_tokens: Optional list of token IDs to start generation (without genre/BOS)
+            genre: Optional genre string (e.g., "pop") to condition generation
+            max_len: Maximum sequence length
+            temperature: Sampling temperature
+
+        Returns:
+            Generated chord sequence as a string
+        """
+        self.eval()
+
+        # Reset TypePositionalEncoding state if used
+        if isinstance(self.pos_encoder, TypePositionalEncoding):
+            self.pos_encoder.reset_state()
+
+        # Start with genre token + BOS
+        tokens = []
+        if genre is not None:
+            genre_token = vocab.token2idx.get(f"[GENRE_{genre.upper()}]", vocab.token2idx["[GENRE_UNKNOWN]"])
+            tokens.append(genre_token)
+        tokens.append(vocab.token2idx['[BOS]'])
+
+        # Append any additional start tokens
+        if start_tokens is not None:
+            tokens += start_tokens
+
+        with torch.no_grad():
+            for _ in range(max_len):
+                src = torch.tensor([tokens], device=self.device)
+                logits = self(src)  # forward pass
+
+                # Get last token logits and apply temperature
+                logits = logits[0, -1, :] / temperature
+                probs = torch.softmax(logits, dim=-1)
+
+                # Sample next token
+                next_token = torch.multinomial(probs, 1).item()
+
+                # Stop if EOS
+                if next_token == vocab.token2idx['[EOS]']:
+                    break
+
+                tokens.append(next_token)
+
+        return vocab.decode(tokens)

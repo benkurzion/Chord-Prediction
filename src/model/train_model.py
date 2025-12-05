@@ -8,6 +8,17 @@ list
 
 def train_model():
 
+    if torch.cuda.is_available():
+        accelerator = 'gpu'
+        devices = min(2, torch.cuda.device_count())  # Use up to 2 GPUs if available
+        precision = '16-mixed'
+        print(f"Training on GPU with {devices} device(s)")
+    else:
+        accelerator = 'cpu'
+        devices = 1
+        precision = '32'  # or 32-true for newer PyTorch Lightning versions
+        print("Training on CPU (GPU not available)")
+
     # Initialize data module
     dm = ChordDataModule(
         batch_size=64,

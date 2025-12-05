@@ -29,63 +29,63 @@ class PositionalEncoding(nn.Module):
         x = x + self.pe[:, :x.size(1), :]
         return self.dropout(x)
 
-class TypePositionalEncoding(PositionalEncoding):
+class TypePositionalEncoding(nn.Module):
     """
-    Positional encoding strategy that assigns a PE vector based on the
-    token's identity (type), not its current sequence position.
-    
-    A token's position is fixed to the *first time* it was encountered.
+    Sequence-local TypePositionalEncoding.
+
+    A token receives the same PE vector for all its occurrences within a single
+    input sequence (batch size 1). The PE vector is determined by the index of
+    the token's *first* appearance in the current sequence.
     """
     
-    def __init__(self, d_model: int, max_len: int = 5000, dropout: float = 0.1):
-        super().__init__(d_model, max_len, dropout)
-        self.token_to_pos_index = {}
-        self.next_pos_index = 0
+    def __init__(self, d_model: int, max_len: int , dropout: float):
+        super().__init__()
+        self.dropout = nn.Dropout(p=dropout)
+        pe = torch.zeros(max_len, d_model)
+        position = torch.arange(0, max_len, dtype=torch.float).unsqueeze(1)
+        div_term = torch.exp(torch.arange(0, d_model, 2).float() * (-math.log(10000.0) / d_model))
         
-    def forward(self, src_token_ids, embedded_x):
+        pe[:, 0::2] = torch.sin(position * div_term)
+        pe[:, 1::2] = torch.cos(position * div_term)
+        pe = pe.unsqueeze(0)
+        
+        self.register_buffer('pe', pe)
+        
+    def forward(self, src_token_ids: torch.Tensor, embedded_x: torch.Tensor) -> torch.Tensor:
         """
-        Custom forward pass that uses a token's *identity* to look up a fixed PE index.
+        Sequence-Local Type Positional Encoding (Batched).
         
-        :param src_token_ids: The tensor of token IDs (e.g., from the input batch 'src'). Shape: (B, L)
+        :param src_token_ids: The tensor of token IDs. Shape: (B, L)
         :param embedded_x: The already embedded tensor (input to PE). Shape: (B, L, D)
-        :return: The embedded tensor with Type-based Positional Encoding added.
         """
         B, L, D = embedded_x.size()
 
-        type_pe = torch.zeros(B, L, D, device=embedded_x.device)
+        type_pe = torch.zeros_like(embedded_x)
+        max_pe_len = self.pe.size(1)
 
-        if B > 1:
-            print("Warning: TypePositionalEncoding is designed for B=1 (e.g., generation) or requires state management for batched training.")
-        if B == 1:
-            src_tokens = src_token_ids[0].tolist() # Get the single sequence of tokens
+        for b in range(B):
+            sequence = src_token_ids[b] # (L,)
+            
+            # Map for this sequence
+            token_to_pos_index = {}
+            next_pos_index = 0
             
             for i in range(L):
-                token_id = src_tokens[i]
-                if token_id not in self.token_to_pos_index:
-                    if self.next_pos_index < self.pe.size(1):
-                        self.token_to_pos_index[token_id] = self.next_pos_index
-                        self.next_pos_index += 1
-                    else:
-                        # Handle overflow (e.g., assign max_len - 1's PE)
-                        self.token_to_pos_index[token_id] = self.pe.size(1) - 1
-
-                pos_index = self.token_to_pos_index[token_id]
-                type_pe[0, i, :] = self.pe[0, pos_index, :]
+                token_id = sequence[i].item()
                 
-        else: 
-            return super().forward(embedded_x)
-              
+                if token_id not in token_to_pos_index:
+                    if next_pos_index < max_pe_len:
+                        token_to_pos_index[token_id] = next_pos_index
+                        next_pos_index += 1
+                    else:
+                        token_to_pos_index[token_id] = max_pe_len - 1
+
+                pos_index = token_to_pos_index[token_id]
+                type_pe[b, i, :] = self.pe[0, pos_index, :]
+                
         # Add the type-based PE and apply dropout
         x = embedded_x + type_pe
         return self.dropout(x)
-        
-    def reset_state(self):
-        """
-        Call this before processing a new, independent sequence (like a new sample 
-        in a batch or a new generation session).
-        """
-        self.token_to_pos_index = {}
-        self.next_pos_index = 0
 
 class ChordTransformer(pl.LightningModule):
     """Transformer model for chord progression generation."""
@@ -175,10 +175,6 @@ class ChordTransformer(pl.LightningModule):
     
     def training_step(self, batch, batch_idx):
         """Training step."""
-
-        if isinstance(self.pos_encoder, TypePositionalEncoding):
-            if batch['src'].size(0) == 1:
-                self.pos_encoder.reset_state()
         src = batch['src']
         tgt = batch['tgt']
         src_mask = batch['src_mask']
@@ -204,9 +200,6 @@ class ChordTransformer(pl.LightningModule):
     
     def validation_step(self, batch, batch_idx):
         """Validation step."""
-        if isinstance(self.pos_encoder, TypePositionalEncoding):
-            if batch['src'].size(0) == 1:
-                self.pos_encoder.reset_state()
 
         src = batch['src']
         tgt = batch['tgt']
@@ -231,9 +224,6 @@ class ChordTransformer(pl.LightningModule):
     
     def test_step(self, batch, batch_idx):
         """test step."""
-        if isinstance(self.pos_encoder, TypePositionalEncoding):
-            if batch['src'].size(0) == 1:
-                self.pos_encoder.reset_state()
 
         src = batch['src']
         tgt = batch['tgt']
@@ -282,9 +272,6 @@ class ChordTransformer(pl.LightningModule):
     def generate(self, vocab, start_tokens=None, max_len=100, temperature=1.0):
         """Generate a chord progression."""
         self.eval()
-
-        if isinstance(self.pos_encoder, TypePositionalEncoding):
-            self.pos_encoder.reset_state()
         
         if start_tokens is None:
             # Start with BOS token
@@ -331,9 +318,6 @@ class ChordTransformer(pl.LightningModule):
         """
         self.eval()
 
-        # Reset TypePositionalEncoding state if used
-        if isinstance(self.pos_encoder, TypePositionalEncoding):
-            self.pos_encoder.reset_state()
 
         # Start with genre token + BOS
         tokens = []
